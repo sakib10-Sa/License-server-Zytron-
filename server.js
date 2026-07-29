@@ -52,7 +52,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// ------------ API Routes (existing) ------------
+// ------------ API Routes ------------
 app.post("/api/validate", (req, res) => {
   const { key, device_id, app_version, package_name } = req.body || {};
   if (!key || !device_id) {
@@ -133,7 +133,7 @@ app.post("/api/admin/config", requireAdmin, (req, res) => {
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
-// ------------ NEW: WebSocket & Commands ------------
+// ------------ WebSocket & Commands ------------
 function addCommand(targetDeviceId, payload) {
   const db = loadDB();
   db.commands = db.commands || [];
@@ -196,7 +196,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// ------------ Start server ------------
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`✅ License + Command server running on port ${PORT}`);
