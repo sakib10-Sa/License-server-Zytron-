@@ -1,11 +1,20 @@
 const express = require("express");
+const http = require("http");
+const socketIo = require("socket.io");
+const cors = require("cors");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
 const app = express();
-app.use(express.json());
+const server = http.createServer(app);
+const io = socketIo(server, { cors: { origin: "*" } });
 
+app.use(cors());
+app.use(express.json());
+app.use(express.static("public"));
+
+// ---------------- Config & DB -----------------
 const DB_PATH = path.join(__dirname, "keys.json");
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "change-me-to-a-long-random-string";
 const APP_PACKAGE_NAME = process.env.APP_PACKAGE_NAME || "com.yourcompany.cloudpro";
@@ -13,7 +22,7 @@ let MIN_SUPPORTED_VERSION = process.env.MIN_SUPPORTED_VERSION || "1.0.0";
 
 function loadDB() {
   if (!fs.existsSync(DB_PATH)) {
-    fs.writeFileSync(DB_PATH, JSON.stringify({ keys: {} }, null, 2));
+    fs.writeFileSync(DB_PATH, JSON.stringify({ keys: {}, commands: [] }, null, 2));
   }
   return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
 }
@@ -43,6 +52,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ------------ API Routes (existing) ------------
 app.post("/api/validate", (req, res) => {
   const { key, device_id, app_version, package_name } = req.body || {};
   if (!key || !device_id) {
@@ -123,7 +133,71 @@ app.post("/api/admin/config", requireAdmin, (req, res) => {
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
+// ------------ NEW: WebSocket & Commands ------------
+function addCommand(targetDeviceId, payload) {
+  const db = loadDB();
+  db.commands = db.commands || [];
+  db.commands.push({
+    targetDeviceId: targetDeviceId || null,
+    payload: JSON.stringify(payload),
+    sentAt: Date.now(),
+    delivered: false
+  });
+  saveDB(db);
+}
+
+function getPendingCommands(deviceId) {
+  const db = loadDB();
+  return (db.commands || []).filter(
+    c => (c.targetDeviceId === deviceId || c.targetDeviceId === null) && !c.delivered
+  );
+}
+
+function markCommandDelivered(cmdId) {
+  const db = loadDB();
+  const cmd = db.commands.find(c => c.id === cmdId);
+  if (cmd) cmd.delivered = true;
+  saveDB(db);
+}
+
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
+
+  socket.on("authenticate", ({ key, device_id }) => {
+    const db = loadDB();
+    const record = db.keys[key];
+    if (!record || record.revoked || (record.locked_device_id && record.locked_device_id !== device_id)) {
+      socket.emit("error", "Authentication failed");
+      socket.disconnect();
+      return;
+    }
+    socket.deviceId = device_id;
+    socket.key = key;
+    socket.join(`device-${device_id}`);
+
+    const pending = getPendingCommands(device_id);
+    pending.forEach(cmd => {
+      socket.emit("command", JSON.parse(cmd.payload));
+      markCommandDelivered(cmd.id);
+    });
+  });
+
+  socket.on("admin-command", ({ targetDeviceId, payload }) => {
+    addCommand(targetDeviceId || null, payload);
+    if (targetDeviceId) {
+      io.to(`device-${targetDeviceId}`).emit("command", payload);
+    } else {
+      io.emit("command", payload);
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+  });
+});
+
+// ------------ Start server ------------
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`License server listening on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`✅ License + Command server running on port ${PORT}`);
 });
