@@ -16,8 +16,8 @@ app.use(express.static("public"));
 
 // ---------------- Config & DB -----------------
 const DB_PATH = path.join(__dirname, "keys.json");
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "change-me-to-a-long-random-string";
-const APP_PACKAGE_NAME = process.env.APP_PACKAGE_NAME || "com.yourcompany.cloudpro";
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "xK9mP2nQ5rT8vW3zL7yF4aB6cD1eG0hJ";
+const APP_PACKAGE_NAME = process.env.APP_PACKAGE_NAME || "com.zytron.p0";
 let MIN_SUPPORTED_VERSION = process.env.MIN_SUPPORTED_VERSION || "1.0.0";
 
 function loadDB() {
